@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR Matematik Tahun 1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #1a202c; /* Fallback color */
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* Prevent scrolling on touch */
+        }
+        
+        #video-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+            transform: scaleX(-1); /* Mirror effect */
+            opacity: 0.6; /* Gelapkan sikit supaya soalan jelas */
+        }
+
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        .ui-layer {
+            position: absolute;
+            z-index: 20;
+            pointer-events: none; /* Let canvas handle clicks/touches */
+        }
+
+        /* Glassmorphism for UI elements */
+        .glass {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        #loading-screen, #start-screen, #end-screen {
+            pointer-events: auto; /* Re-enable clicks for modals */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Video background for AR effect -->
+    <video id="video-background" autoplay playsinline></video>
+    
+    <!-- Canvas for drawing game objects (Questions, Answers, Particles) -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Top Score UI -->
+    <div class="ui-layer top-4 left-4 right-4 flex justify-between items-center hidden" id="hud">
+        <div class="glass rounded-2xl px-6 py-3 font-bold text-2xl text-blue-700">
+            Tahun 1: Tambah & Tolak
+        </div>
+        <div class="glass rounded-2xl px-6 py-3 font-bold text-2xl text-green-600 flex items-center gap-2">
+            <span>⭐ Markah:</span>
+            <span id="score-display">0</span>/100
+        </div>
+    </div>
+
+    <!-- Pemandu Arah Tangan (Hand Guide) -->
+    <div class="ui-layer bottom-4 left-1/2 transform -translate-x-1/2 glass rounded-full px-6 py-2 text-sm font-semibold text-gray-700 hidden text-center" id="hand-guide">
+        👆 Cubit jari di hadapan kamera untuk pegang nombor, atau sentuh skrin!
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-90 backdrop-blur-sm">
+        <div class="bg-white rounded-3xl p-10 max-w-lg text-center shadow-2xl border-4 border-blue-400 transform transition-transform hover:scale-105">
+            <div class="text-6xl mb-4">🖐️🧮</div>
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">AR Matematik</h1>
+            <p class="text-gray-600 mb-6 text-lg">Gunakan pergerakan tangan anda di hadapan kamera untuk menyusun jawapan yang betul!</p>
+            <ul class="text-left bg-blue-50 rounded-xl p-4 mb-8 text-blue-800 font-medium">
+                <li class="mb-2">✅ 5 Soalan Suaikan</li>
+                <li class="mb-2">✅ Cubit (Pinch) jari untuk tarik blok nombor</li>
+                <li>✅ Boleh juga guna jari (touch) pada skrin</li>
+            </ul>
+            <button id="start-btn" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-4 px-8 rounded-2xl shadow-lg transform transition active:scale-95 text-xl">
+                Mula Main Sekarang!
+            </button>
+            <p id="loading-text" class="text-sm text-gray-500 mt-4 hidden">Sistem sedang memuatkan kamera & AI...</p>
+        </div>
+    </div>
+
+    <!-- End Screen (Hidden by default) -->
+    <div id="end-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 backdrop-blur-md hidden">
+        <div class="bg-gradient-to-b from-yellow-300 to-yellow-500 rounded-3xl p-10 max-w-lg text-center shadow-[0_0_50px_rgba(255,215,0,0.6)] border-4 border-white">
+            <div class="text-7xl mb-4 animate-bounce">🏆</div>
+            <h1 class="text-5xl font-black text-white mb-2 drop-shadow-md">TAHNIAH!</h1>
+            <p class="text-yellow-900 font-bold text-2xl mb-2">Anda Sangat Hebat!</p>
+            <div class="bg-white rounded-2xl py-4 my-6 shadow-inner">
+                <p class="text-gray-500 font-semibold uppercase tracking-wider text-sm">Markah Anda</p>
+                <p class="text-6xl font-black text-green-500">100<span class="text-3xl text-gray-400">/100</span></p>
+            </div>
+            <p class="text-white font-medium mb-8">Semua soalan Matematik Tahun 1 telah diselesaikan dengan cemerlang.</p>
+            <button id="restart-btn" class="w-full bg-white text-yellow-600 hover:bg-gray-100 font-bold py-4 px-8 rounded-2xl shadow-lg transform transition active:scale-95 text-xl">
+                Main Semula
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Audio System (Web Audio API) ---
+        // Menggunakan Audio API binaan dalam supaya tidak perlu fail luaran
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            if (type === 'success') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                osc.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1); // A6
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'error') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'win') {
+                // Arpeggio
+                const notes = [440, 554, 659, 880];
+                notes.forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime + i * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + i * 0.1 + 0.5);
+                    osc.start(audioCtx.currentTime + i * 0.1);
+                    osc.stop(audioCtx.currentTime + i * 0.1 + 0.5);
+                });
+            }
+        }
+
+        // --- 2. Game Variables & Data ---
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('video-background');
+        
+        let width, height;
+        let score = 0;
+        let isGameRunning = false;
+
+        const baseQuestions = [
+            { q: "3 + 4 =", a: "7" },
+            { q: "10 - 5 =", a: "5" },
+            { q: "6 + 2 =", a: "8" },
+            { q: "9 - 6 =", a: "3" },
+            { q: "5 + 5 =", a: "10" }
+        ];
+
+        let dropzones = [];
+        let draggables = [];
+        let particles = [];
+        
+        // Interaction state
+        let pointer = { x: 0, y: 0, isDown: false, activeId: null, isHand: false };
+        let handCursor = { x: 0, y: 0, active: false, pinchDist: 1 };
+
+        // --- 3. Setup Layout & Entities ---
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Adjust layouts when screen resizes
+            if(isGameRunning) setupLevelLayout(false); 
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function setupLevelLayout(resetData = true) {
+            const margin = width < 600 ? 20 : 60;
+            const topMargin = 100; // Ruang untuk markah
+            
+            // Box sizes
+            const qBoxWidth = width < 600 ? 120 : 200;
+            const qBoxHeight = width < 600 ? 50 : 70;
+            const aBoxSize = width < 600 ? 50 : 70;
+            
+            // Layout calculations
+            const spacingY = (height - topMargin - 80) / 5;
+
+            if (resetData) {
+                dropzones = [];
+                draggables = [];
+                
+                // Shuffle answers
+                let shuffledAnswers = baseQuestions.map(q => q.a);
+                shuffleArray(shuffledAnswers);
+
+                for (let i = 0; i < 5; i++) {
+                    // Dropzones (Left side)
+                    dropzones.push({
+                        q: baseQuestions[i].q,
+                        targetA: baseQuestions[i].a,
+                        x: margin,
+                        y: topMargin + i * spacingY,
+                        w: qBoxWidth,
+                        h: qBoxHeight,
+                        isFilled: false,
+                        color: 'rgba(255, 255, 255, 0.9)'
+                    });
+
+                    // Draggables (Right side)
+                    draggables.push({
+                        val: shuffledAnswers[i],
+                        baseX: width - margin - aBoxSize,
+                        baseY: topMargin + i * spacingY,
+                        x: width - margin - aBoxSize,
+                        y: topMargin + i * spacingY,
+                        w: aBoxSize,
+                        h: aBoxSize,
+                        isDragging: false,
+                        isLocked: false,
+                        color: 'rgba(59, 130, 246, 0.9)', // Blue-500
+                        targetX: width - margin - aBoxSize, // for smooth return
+                        targetY: topMargin + i * spacingY
+                    });
+                }
+            } else {
+                // Just update positions based on new screen size
+                for (let i = 0; i < 5; i++) {
+                    dropzones[i].x = margin;
+                    dropzones[i].y = topMargin + i * spacingY;
+                    dropzones[i].w = qBoxWidth;
+                    dropzones[i].h = qBoxHeight;
+
+                    if (!draggables[i].isLocked && !draggables[i].isDragging) {
+                        draggables[i].baseX = width - margin - aBoxSize;
+                        draggables[i].baseY = topMargin + i * spacingY;
+                        draggables[i].x = draggables[i].baseX;
+                        draggables[i].y = draggables[i].baseY;
+                        draggables[i].targetX = draggables[i].baseX;
+                        draggables[i].targetY = draggables[i].baseY;
+                    }
+                    draggables[i].w = aBoxSize;
+                    draggables[i].h = aBoxSize;
+                }
+            }
+        }
+
+        // --- 4. Particle Effects ---
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 20; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    radius: Math.random() * 5 + 2,
+                    color: color,
+                    life: 1.0
+                });
+            }
+        }
+
+        function createConfetti() {
+            const colors = ['#fde047', '#3b82f6', '#ef4444', '#22c55e', '#a855f7'];
+            for (let i = 0; i < 100; i++) {
+                particles.push({
+                    x: Math.random() * width,
+                    y: -10,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: Math.random() * 5 + 2,
+                    radius: Math.random() * 6 + 3,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    life: 2.0 // lives longer
+                });
+            }
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.1; // gravity
+                p.life -= 0.02;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.globalAlpha = Math.max(0, p.life);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        // --- 5. Drawing & Game Loop ---
+        function drawRoundedRect(x, y, w, h, r, fill, stroke) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+            
+            if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+            if (stroke) { ctx.lineWidth = 3; ctx.strokeStyle = stroke; ctx.stroke(); }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Dropzones (Questions)
+            ctx.font = `bold ${width < 600 ? 20 : 28}px Inter, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            dropzones.forEach(dz => {
+                // Question Box
+                drawRoundedRect(dz.x, dz.y, dz.w, dz.h, 15, dz.color, '#cbd5e1');
+                ctx.fillStyle = '#1e293b';
+                ctx.fillText(dz.q, dz.x + dz.w / 2, dz.y + dz.h / 2);
+                
+                // Target Slot indicator (empty box next to it)
+                const slotX = dz.x + dz.w + 10;
+                drawRoundedRect(slotX, dz.y, dz.h, dz.h, 15, dz.isFilled ? 'transparent' : 'rgba(255,255,255,0.4)', '#94a3b8');
+            });
+
+            // Draw Draggables (Answers)
+            draggables.forEach(dr => {
+                // Smooth movement towards target
+                if (!dr.isDragging && !dr.isLocked) {
+                    dr.x += (dr.targetX - dr.x) * 0.2;
+                    dr.y += (dr.targetY - dr.y) * 0.2;
+                }
+
+                // Add shadow if dragging
+                if (dr.isDragging) {
+                    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+                    ctx.shadowBlur = 15;
+                    ctx.shadowOffsetY = 10;
+                }
+
+                drawRoundedRect(dr.x, dr.y, dr.w, dr.h, 15, dr.color, '#2563eb');
+                
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetY = 0;
+
+                ctx.fillStyle = 'white';
+                ctx.font = `bold ${width < 600 ? 24 : 32}px Inter, sans-serif`;
+                ctx.fillText(dr.val, dr.x + dr.w / 2, dr.y + dr.h / 2);
+            });
+
+            drawParticles();
+
+            // Draw Hand Cursor (if hand tracking is active)
+            if (handCursor.active) {
+                const hx = handCursor.x;
+                const hy = handCursor.y;
+                
+                // Draw cursor ring
+                ctx.beginPath();
+                ctx.arc(hx, hy, pointer.isDown ? 15 : 25, 0, Math.PI * 2);
+                ctx.strokeStyle = pointer.isDown ? '#22c55e' : '#eab308';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                // Fill center if pinching
+                if (pointer.isDown) {
+                    ctx.beginPath();
+                    ctx.arc(hx, hy, 10, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+                    ctx.fill();
+                }
+            }
+
+            if (isGameRunning) {
+                requestAnimationFrame(draw);
+            }
+        }
+
+        // --- 6. Interaction Logic (Physics & Collisions) ---
+        function checkCollision(px, py, rect) {
+            return px >= rect.x && px <= rect.x + rect.w &&
+                   py >= rect.y && py <= rect.y + rect.h;
+        }
+
+        function checkOverlap(rect1, rect2) {
+            return !(rect1.x > rect2.x + rect2.w || 
+                     rect1.x + rect1.w < rect2.x || 
+                     rect1.y > rect2.y + rect2.h ||
+                     rect1.y + rect1.h < rect2.y);
+        }
+
+        function handlePointerDown(px, py) {
+            for (let i = draggables.length - 1; i >= 0; i--) {
+                let dr = draggables[i];
+                if (!dr.isLocked && checkCollision(px, py, dr)) {
+                    dr.isDragging = true;
+                    pointer.activeId = i;
+                    pointer.isDown = true;
+                    // Bring to front by reordering array
+                    draggables.push(draggables.splice(i, 1)[0]);
+                    pointer.activeId = draggables.length - 1;
+                    break;
+                }
+            }
+        }
+
+        function handlePointerMove(px, py) {
+            if (pointer.isDown && pointer.activeId !== null) {
+                let dr = draggables[pointer.activeId];
+                dr.x = px - dr.w / 2;
+                dr.y = py - dr.h / 2;
+            }
+        }
+
+        function handlePointerUp() {
+            if (pointer.isDown && pointer.activeId !== null) {
+                let dr = draggables[pointer.activeId];
+                dr.isDragging = false;
+                
+                // Check if dropped near any empty dropzone slot
+                let matched = false;
+                for (let i = 0; i < dropzones.length; i++) {
+                    let dz = dropzones[i];
+                    if (dz.isFilled) continue;
+
+                    // Slot bounding box (next to question)
+                    const slotRect = { x: dz.x + dz.w + 10, y: dz.y, w: dz.h, h: dz.h };
+                    
+                    if (checkOverlap(dr, slotRect)) {
+                        // Validate Answer
+                        if (dr.val === dz.targetA) {
+                            // Correct!
+                            dr.isLocked = true;
+                            dr.x = slotRect.x;
+                            dr.y = slotRect.y;
+                            dz.isFilled = true;
+                            dz.color = 'rgba(187, 247, 208, 0.9)'; // Green-200
+                            dr.color = '#16a34a'; // Green-600
+                            
+                            score += 20;
+                            document.getElementById('score-display').innerText = score;
+                            playSound('success');
+                            createParticles(slotRect.x + slotRect.w/2, slotRect.y + slotRect.h/2, '#22c55e');
+                            matched = true;
+                            
+                            checkWinCondition();
+                        } else {
+                            // Wrong!
+                            playSound('error');
+                            dz.color = 'rgba(254, 202, 202, 0.9)'; // Red-200
+                            setTimeout(() => { 
+                                if(!dz.isFilled) dz.color = 'rgba(255, 255, 255, 0.9)'; 
+                            }, 500);
+                        }
+                        break;
+                    }
+                }
+
+                if (!matched) {
+                    // Send back to origin
+                    dr.targetX = dr.baseX;
+                    dr.targetY = dr.baseY;
+                }
+            }
+            pointer.isDown = false;
+            pointer.activeId = null;
+        }
+
+        function checkWinCondition() {
+            if (score === 100) {
+                setTimeout(() => {
+                    playSound('win');
+                    createConfetti();
+                    document.getElementById('end-screen').classList.remove('hidden');
+                }, 1000);
+            }
+        }
+
+        // Mouse & Touch Listeners (Fallback/Alternative to Hands)
+        canvas.addEventListener('mousedown', (e) => handlePointerDown(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', (e) => {
+            if(!pointer.isHand) handlePointerMove(e.clientX, e.clientY);
+        });
+        window.addEventListener('mouseup', () => handlePointerUp());
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Stop scrolling
+            handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if(!pointer.isHand) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+        window.addEventListener('touchend', () => handlePointerUp());
+
+
+        // --- 7. MediaPipe Hands (AR / Hand Tracking) ---
+        let hands;
+        let camera;
+        
+        async function initCameraAndHands() {
+            const loadingText = document.getElementById('loading-text');
+            loadingText.classList.remove('hidden');
+            loadingText.innerText = "Meminta kebenaran kamera...";
+
+            try {
+                // 1. Setup Camera Video
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                
+                loadingText.innerText = "Memuatkan Model AI Tangan (Sila tunggu seketika)...";
+
+                // 2. Setup MediaPipe Hands
+                hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+                
+                hands.setOptions({
+                    maxNumHands: 1, // Only track one hand for simplicity
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.7
+                });
+
+                hands.onResults(onHandResults);
+
+                // 3. Connect Camera to MediaPipe
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({image: video});
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                await camera.start();
+                loadingText.innerText = "Berjaya!";
+                return true;
+            } catch (err) {
+                console.error("Camera/MediaPipe error: ", err);
+                loadingText.innerText = "Kamera tidak dikesan. Anda masih boleh guna jari/tetikus!";
+                loadingText.classList.add('text-red-500');
+                
+                // Fill background with gradient if no camera
+                video.style.display = 'none';
+                document.body.style.background = 'linear-gradient(135deg, #1e293b, #0f172a)';
+                return false; // Fallback to touch
+            }
+        }
+
+        function onHandResults(results) {
+            if (!isGameRunning) return;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handCursor.active = true;
+                pointer.isHand = true;
+
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // landmarks[8] = Index Finger Tip, landmarks[4] = Thumb Tip
+                // Webcams are mirrored, so we invert X: (1 - x)
+                const indexX = (1 - landmarks[8].x) * width;
+                const indexY = landmarks[8].y * height;
+                const thumbX = (1 - landmarks[4].x) * width;
+                const thumbY = landmarks[4].y * height;
+
+                // Midpoint for cursor position
+                handCursor.x = (indexX + thumbX) / 2;
+                handCursor.y = (indexY + thumbY) / 2;
+
+                // Calculate distance between thumb and index to detect "Pinch"
+                const dist = Math.hypot(indexX - thumbX, indexY - thumbY);
+                const pinchThreshold = width < 600 ? 50 : 80; // pixels
+
+                if (dist < pinchThreshold) {
+                    // PINCHING (GRABBING)
+                    if (!pointer.isDown) {
+                        handlePointerDown(handCursor.x, handCursor.y);
+                    } else {
+                        handlePointerMove(handCursor.x, handCursor.y);
+                    }
+                } else {
+                    // RELEASED
+                    if (pointer.isDown) {
+                        handlePointerUp();
+                    }
+                }
+            } else {
+                // No hands detected
+                handCursor.active = false;
+                pointer.isHand = false;
+                if (pointer.isDown) {
+                    handlePointerUp();
+                }
+            }
+        }
+
+        // --- 8. Game Flow Control ---
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            initAudio(); // Initialize audio context on user gesture
+            
+            // Try to load camera if not started
+            if (!camera) {
+                const btn = document.getElementById('start-btn');
+                const originalText = btn.innerText;
+                btn.innerText = "Sila Tunggu...";
+                btn.disabled = true;
+                btn.classList.add('opacity-50');
+                
+                await initCameraAndHands();
+                
+                btn.innerText = originalText;
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('hand-guide').classList.remove('hidden');
+            
+            // Hide guide after 5 seconds
+            setTimeout(() => {
+                document.getElementById('hand-guide').classList.add('opacity-0');
+                setTimeout(() => document.getElementById('hand-guide').classList.add('hidden'), 500);
+            }, 6000);
+
+            startGame();
+        });
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            document.getElementById('end-screen').classList.add('hidden');
+            particles = [];
+            startGame();
+        });
+
+        function startGame() {
+            score = 0;
+            document.getElementById('score-display').innerText = score;
+            setupLevelLayout(true);
+            
+            if (!isGameRunning) {
+                isGameRunning = true;
+                draw(); // Start loop
+                // start particles update loop separately
+                setInterval(updateParticles, 1000/60);
+            }
+        }
+
+    </script>
+</body>
+</html>
